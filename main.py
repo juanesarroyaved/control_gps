@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+os.chdir(r"C:\Z_Proyectos\control_GPS")
+
 import pandas as pd
 import config
 import sqldf
@@ -7,6 +9,9 @@ import sqldf
 import plotly.graph_objects as go
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from io import BytesIO
+from docx import Document
+from docx.shared import Inches
 
 date = datetime.now() - relativedelta(days=1)
 date_str = date.strftime('%Y.%m.%d')
@@ -40,6 +45,10 @@ final_agg.drop(['index'], axis=1, inplace=True)
 
 
 for plate in df['Vehicle plate number'].unique():
+    
+    document = Document()
+    document.add_heading(f'GPS {plate} del {date_str}')
+    
     plate_path = os.path.join(config.control_path, f'{plate}')
     if not os.path.isdir(plate_path):
         os.mkdir(plate_path)
@@ -62,7 +71,32 @@ for plate in df['Vehicle plate number'].unique():
                                      'lon': lon_center},
                           'style': "open-street-map",
                           'zoom': 11})
-        fig.write_image(os.path.join(day_path, f'{plate}.png'))
+        fig_png = BytesIO(fig.to_image(format="png"))
+        
+        document.add_picture(fig_png, width=Inches(6.0))
+        
+    trip_num = 0
+    for index, row in df_plate.iterrows():
+        trip_num += 1
+        document.add_paragraph(f'Viaje {trip_num}: desde {row["Start time"]} hasta {row["End time"]}')
+        document.add_paragraph(f'Duración del viaje: {row["Duration_mins"]} minutos.')
+        
+        fig = go.Figure(go.Scattermapbox(mode = "markers+lines",
+                                        lon = [row['Longitud_Inicio'], row['Longitud_Fin']],
+                                        lat = [row['Latitud_Inicio'], row['Latitud_Fin']],
+                                        marker = {'size': 7}))
+        lat_center = (row['Latitud_Inicio'] + row['Latitud_Fin'])/2
+        lon_center = (row['Longitud_Inicio'] + row['Longitud_Fin'])/2
+        fig.update_layout(margin ={'l':0,'t':0,'b':0,'r':0},
+                mapbox = {'center': {'lat': lat_center,
+                                     'lon': lon_center},
+                          'style': "open-street-map",
+                          'zoom': 11})
+        fig_png = BytesIO(fig.to_image(format="png"))
+        
+        document.add_picture(fig_png, width=Inches(6.0))
+        
+    document.save(os.path.join(day_path, f'{date_str}_{plate}.docx'))
     
     print('Procesada: ', plate)
 
