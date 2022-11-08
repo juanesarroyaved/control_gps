@@ -24,3 +24,40 @@ join_agg = """SELECT D.*, P.Total_Horas_Parqueo, P.Prom_Mins_Parqueo
             ON D.Placa = P.Placa
             ORDER BY Total_Viajes DESC
             """
+
+zoom_list = [(0.013, 14), (0.03, 13), (0.08, 12), (0.1, 11), (0.18, 10)]
+
+"""
+Lugares a listar (priorizar por tours):
+    - Marriott, York, Click-Clack, San Fernando, Hashtag, El Cielo, El Bin,
+    Intercontinental
+    - Pueblito Paisa, Plaza Botero, Comuna 13, Alpujarra, Pies descalzos,
+    Pq. Poblado, Lleras, Provenza, Parques del río-edif inteligente,
+    Jardín Botánico, Estadio, Museo de la memoria, Ciudad del Río, Parque Arví.
+    - Tunel de oriente y occidente, EOH, JMC, Club Campestre-Rodeo-Country,
+    Pq. Envigado-Sabaneta-La Estrella, Centros Comerciales, Hospitales.
+    - Oficina, Guatapé
+"""
+
+"""
+ZOOM:
+    
+Calcular hipotenusa (trayecto)
+
+Hipot	Zoom
+0.1100	10
+0.1831	10
+0.0832	11
+0.1000	11
+0.0442	12
+0.0637	12
+0.0750	12
+0.0140	13
+0.0188	13
+0.0274	13
+0.0300	13
+0.0000	14
+0.0129	14
+0.0130	14
+
+"""

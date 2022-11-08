@@ -1,8 +1,20 @@
 # -*- coding: utf-8 -*-
+
+"""
+- OK --> Detallar en el gráfico cuál es el punto de inicio y punto de fin de un viaje.*
+- OK --> Configurar el zoom automático.
+- Poner etiquetas de lugares frecuentes: ej: Marriott, Oficina, York, aeropuertos, etc.
+- Correo con notificación de ejecución
+- Informe de sitios turísticos.
+- OK --> Averiguar cuando se cuenta como Parqueo y cuando no.
+- Alison: placas con el tipo de vehículo y creación de carpetas por tipo
+"""
+
 import os
 os.chdir(r"C:\Z_Proyectos\control_GPS")
 
 import pandas as pd
+import numpy as np
 import config
 import sqldf
 
@@ -44,6 +56,8 @@ def clean_data(df):
     return df
 
 def aggregate_metrics():
+    global df_drive_agg, df_park_agg
+    
     df_drive_agg = sqldf.run(config.driving_agg)
     df_park_agg = sqldf.run(config.parking_agg)
     df_agg = sqldf.run(config.join_agg)
@@ -66,13 +80,19 @@ def plot_all_trips(df_plate):
     longs.append(df_plate['Longitud_Fin'].tolist()[-1])
     lats = df_plate['Latitud_Inicio'].tolist()
     lats.append(df_plate['Latitud_Fin'].tolist()[-1])
-    fig = go.Figure(go.Scattermapbox(mode = "markers+lines", marker = {'size': 7},
+    fig = go.Figure(go.Scattermapbox(mode = "markers+lines", marker = {'size': 9},
                                     lon = longs, lat = lats))
+    row = {'Latitud_Inicio': df_plate['Latitud_Inicio'].max(),
+           'Latitud_Fin': df_plate['Latitud_Inicio'].min(),
+           'Longitud_Inicio': df_plate['Longitud_Inicio'].max(),
+           'Longitud_Fin': df_plate['Longitud_Inicio'].min()}
+    zoom = set_plot_zoom(row)
+    
     lat_center = (df_plate['Latitud_Inicio'].max() + df_plate['Latitud_Inicio'].min())/2
     lon_center = (df_plate['Longitud_Inicio'].max() + df_plate['Longitud_Inicio'].min())/2
     fig.update_layout(margin = {'b': 0, 'l': 0, 'r': 0, 't':0},
                       mapbox = {'center': {'lat': lat_center, 'lon': lon_center},
-                                'style': "open-street-map", 'zoom': 11})
+                                'style': "open-street-map", 'zoom': zoom})
     fig_png = BytesIO(fig.to_image(format="png"))
     
     document.add_picture(fig_png, width=Inches(6.0))
@@ -87,18 +107,34 @@ def plot_single_trips(df_plate):
         document.add_paragraph(f'Desde {row["Start time"]} hasta {row["End time"]}')
         document.add_paragraph('Duración del viaje: %.1f minutos.' %row["Duration_mins"])
         document.add_paragraph('Total KM: %.1f' %row["Mileage (KM)"])
-        
-        fig = go.Figure(go.Scattermapbox(mode = "markers+lines", marker = {'size': 7},
+        fig = go.Figure(go.Scattermapbox(mode = "markers+lines",
+                                         marker = {'size': [12,12], 'opacity': 1,
+                                                   'color': ['blue', 'red']},
+                                         line = {'color': 'black'},
                                          lon = [row['Longitud_Inicio'], row['Longitud_Fin']],
                                          lat = [row['Latitud_Inicio'], row['Latitud_Fin']]))
         lat_center = (row['Latitud_Inicio'] + row['Latitud_Fin'])/2
         lon_center = (row['Longitud_Inicio'] + row['Longitud_Fin'])/2
+        zoom = set_plot_zoom(row)
         fig.update_layout(margin = {'b': 0, 'l': 0, 'r': 0, 't':0},
                           mapbox = {'center': {'lat': lat_center,'lon': lon_center},
-                                    'style': "open-street-map", 'zoom': 11})
+                                    'style': "open-street-map", 'zoom': zoom})
         fig_png = BytesIO(fig.to_image(format="png"))
         
         document.add_picture(fig_png, width=Inches(6.0))
+
+def set_plot_zoom(row):
+    cat_1 = np.square(row['Latitud_Inicio'] - row['Latitud_Fin'])
+    cat_2 = np.square(row['Longitud_Inicio'] - row['Longitud_Fin'])
+    hipotenusa = np.sqrt(cat_1 + cat_2)
+    
+    zoom = 10
+    for i in config.zoom_list:
+        if hipotenusa < i[0]:
+            zoom = i[1]
+            break
+    
+    return zoom
 
 def create_trips_docx(df):
     global document
@@ -130,6 +166,7 @@ def main_gps():
     df = clean_data(df)
     aggregate_metrics()
     plot_heatmap_trips(df)
+    df = df[df['Vehicle plate number']=='WMQ691']
     create_trips_docx(df)
     
 if __name__ == '__main__':

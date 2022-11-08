@@ -1,3 +1,4 @@
 control/
 __pycache__/
 reportes/
+trip_metrics/
