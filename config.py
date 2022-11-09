@@ -3,6 +3,7 @@
 report_path = r"C:\Z_Proyectos\control_GPS\reportes\Trip report(20221102-20221102).xlsx"
 param_path = r"C:\Z_Proyectos\control_GPS\parametros_control\Parametros.xlsx"
 control_path = r"C:\Z_Proyectos\control_GPS\control"
+locations_path = r"C:\Z_Proyectos\control_GPS\parametros_control\Ubicaciones.xlsx"
 
 driving_agg = """SELECT "Vehicle plate number" AS Placa, COUNT("Vehicle plate number") AS Total_Viajes,
                 SUM("Mileage (KM)") AS Total_KM, SUM("Duration_mins")/60 AS Total_Horas_Manejo,

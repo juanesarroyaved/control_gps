@@ -24,15 +24,20 @@ from dateutil.relativedelta import relativedelta
 from io import BytesIO
 from docx import Document
 from docx.shared import Inches
+from haversine import haversine, haversine_vector, Unit
 
 date = datetime.now() - relativedelta(days=1)
 date_str = date.strftime('%Y.%m.%d')
 
-def read_data(report_path: str = config.report_path, param_path: str = config.param_path):
+def read_data(report_path: str = config.report_path):
     df = pd.read_excel(report_path, header=3)
+    return df
+    
+def read_param(param_path: str = config.param_path, locations_path: str = config.locations_path):
     df_param = pd.read_excel(param_path)
+    df_locations = pd.read_excel(locations_path)
 
-    return df, df_param
+    return df_param, df_locations
 
 def clean_data(df):
     filter_1 = df['Vehicle plate number'].notna()
@@ -51,6 +56,7 @@ def clean_data(df):
     location_cols = ['Latitud_Inicio', 'Longitud_Inicio', 'Latitud_Fin', 'Longitud_Fin']
     df[location_cols] = df[location_cols].fillna(0.0).replace('-', 0.0).astype(float)
     df[['Longitud_Inicio', 'Longitud_Fin']] = df[['Longitud_Inicio', 'Longitud_Fin']].mul(-1)
+    df = df.reset_index(drop=True)
     df.drop(['#', 'Duration', 'Start location', 'End location'], axis=1, inplace=True)
     
     return df
@@ -64,6 +70,24 @@ def aggregate_metrics():
     df_agg.drop(['index'], axis=1, inplace=True)
     df_agg.to_excel(rf".\trip_metrics\{date_str}_trip_metrics.xlsx")
 
+def common_places(df, df_locations):
+    df['Ubicacion'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
+    df_locations['Ubicacion'] = list(zip(df_locations['Latitud'], df_locations['Longitud']))
+    array_1 = df_locations['Ubicacion'].tolist()
+    array_2 = df['Ubicacion'].tolist()
+    
+    dists = haversine_vector(array_1, array_2, unit='km', comb=True)
+    df_dists = pd.DataFrame(dists, columns=df_locations['Location'])
+    
+    df['Closest'] = df_dists.idxmin(axis=1)
+    df['Dist'] = df_dists.min(axis=1)
+    df = df.merge(df_locations[['Location', 'Perimetro KM']],
+                  left_on=['Closest'], right_on=['Location'], how='left')
+    df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else '', axis=1)
+    
+    
+    return df
+    
 def plot_heatmap_trips(df):
     fig = go.Figure(go.Densitymapbox(lat=df['Latitud_Inicio'], lon=df['Longitud_Inicio'], radius=5))
     
@@ -162,12 +186,19 @@ def create_trips_docx(df):
         print('Procesada: ', plate)
 
 def main_gps():
-    df, df_param = read_data()
-    df = clean_data(df)
+    df = read_data()
+    df_param, df_locations = read_param()
+    
     aggregate_metrics()
     plot_heatmap_trips(df)
-    df = df[df['Vehicle plate number']=='WMQ691']
     create_trips_docx(df)
     
 if __name__ == '__main__':
-    main_gps()
+    #main_gps()
+    df = read_data()
+    df_param, df_locations = read_param()
+    df = clean_data(df)
+    aggregate_metrics()
+    plot_heatmap_trips(df)
+    df = df[df['Vehicle plate number']=='WMQ691'] ### BORRAR
+    create_trips_docx(df)
