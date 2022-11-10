@@ -69,6 +69,16 @@ def aggregate_metrics():
     df_agg = sqldf.run(config.join_agg)
     df_agg.drop(['index'], axis=1, inplace=True)
     df_agg.to_excel(rf".\trip_metrics\{date_str}_trip_metrics.xlsx")
+    
+    df_unique = df[['Vehicle plate number', 'Closest']].drop_duplicates(['Vehicle plate number', 'Closest'])
+    
+    query_places = """
+    SELECT "Vehicle plate number" Placa, GROUP_CONCAT(Closest, ", ") AS Locations
+    FROM df_unique
+    GROUP BY Placa
+    """
+    
+    df_sql = sqldf.run(query_places)
 
 def common_places(df, df_locations):
     df['Ubicacion'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
@@ -83,8 +93,8 @@ def common_places(df, df_locations):
     df['Dist'] = df_dists.min(axis=1)
     df = df.merge(df_locations[['Location', 'Perimetro KM']],
                   left_on=['Closest'], right_on=['Location'], how='left')
-    df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else '', axis=1)
-    
+    df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else None, axis=1)
+    df.drop(['Ubicacion', 'Location', 'Perimetro KM'], axis=1, inplace=True)
     
     return df
     
@@ -188,7 +198,8 @@ def create_trips_docx(df):
 def main_gps():
     df = read_data()
     df_param, df_locations = read_param()
-    
+    df = clean_data(df)
+    df = common_places(df, df_locations)
     aggregate_metrics()
     plot_heatmap_trips(df)
     create_trips_docx(df)
@@ -198,6 +209,7 @@ if __name__ == '__main__':
     df = read_data()
     df_param, df_locations = read_param()
     df = clean_data(df)
+    df = common_places(df, df_locations)
     aggregate_metrics()
     plot_heatmap_trips(df)
     df = df[df['Vehicle plate number']=='WMQ691'] ### BORRAR
