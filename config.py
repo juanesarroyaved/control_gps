@@ -1,9 +1,21 @@
 # -*- coding: utf-8 -*-
 
-report_path = r"C:\Z_Proyectos\control_GPS\reportes\Trip report(20221102-20221102).xlsx"
+import pandas as pd
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+date = datetime.now() - relativedelta(days=1)
+date_str = date.strftime('%Y.%m.%d')
+
 param_path = r"C:\Z_Proyectos\control_GPS\parametros_control\Parametros.xlsx"
-control_path = r"C:\Z_Proyectos\control_GPS\control"
-locations_path = r"C:\Z_Proyectos\control_GPS\parametros_control\Ubicaciones.xlsx"
+
+df_params = pd.read_excel(param_path, sheet_name='PARAMETROS', index_col=0)
+report_path = df_params.loc['Ruta reporte','Valor']
+control_path = df_params.loc['Ruta resultados','Valor']
+
+df_locations = pd.read_excel(param_path, sheet_name='UBICACIONES')
+df_vehicles = pd.read_excel(param_path, sheet_name='VEHICULOS')
+vehicle_types = df_vehicles['Tipo'].dropna().unique()
 
 driving_agg = """SELECT "Vehicle plate number" AS Placa, COUNT("Vehicle plate number") AS Total_Viajes,
                 SUM("Mileage (KM)") AS Total_KM, SUM("Duration_mins")/60 AS Total_Horas_Manejo,
@@ -26,39 +38,9 @@ join_agg = """SELECT D.*, P.Total_Horas_Parqueo, P.Prom_Mins_Parqueo
             ORDER BY Total_Viajes DESC
             """
 
-zoom_list = [(0.013, 14), (0.03, 13), (0.08, 12), (0.1, 11), (0.18, 10)]
+query_places = """SELECT "Vehicle plate number" Placa, GROUP_CONCAT(Closest, ", ") AS Locations
+                FROM df_unique
+                GROUP BY Placa
+                """
 
-"""
-Lugares a listar (priorizar por tours):
-    - Marriott, York, Click-Clack, San Fernando, Hashtag, El Cielo, El Bin,
-    Intercontinental
-    - Pueblito Paisa, Plaza Botero, Comuna 13, Alpujarra, Pies descalzos,
-    Pq. Poblado, Lleras, Provenza, Parques del río-edif inteligente,
-    Jardín Botánico, Estadio, Museo de la memoria, Ciudad del Río, Parque Arví.
-    - Tunel de oriente y occidente, EOH, JMC, Club Campestre-Rodeo-Country,
-    Pq. Envigado-Sabaneta-La Estrella, Centros Comerciales, Hospitales.
-    - Oficina, Guatapé
-"""
-
-"""
-ZOOM:
-    
-Calcular hipotenusa (trayecto)
-
-Hipot	Zoom
-0.1100	10
-0.1831	10
-0.0832	11
-0.1000	11
-0.0442	12
-0.0637	12
-0.0750	12
-0.0140	13
-0.0188	13
-0.0274	13
-0.0300	13
-0.0000	14
-0.0129	14
-0.0130	14
-
-"""
+zoom_list = [(0.5, 15), (2.2, 14), (6, 13), (8, 12), (20, 11), (50, 10), (150, 9), (500, 8)]

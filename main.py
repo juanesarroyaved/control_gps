@@ -5,39 +5,38 @@
 - OK --> Configurar el zoom automático.
 - Poner etiquetas de lugares frecuentes: ej: Marriott, Oficina, York, aeropuertos, etc.
 - Correo con notificación de ejecución
-- Informe de sitios turísticos.
+- OK --> Informe de sitios turísticos.
 - OK --> Averiguar cuando se cuenta como Parqueo y cuando no.
-- Alison: placas con el tipo de vehículo y creación de carpetas por tipo
+- OK --> Alison: placas con el tipo de vehículo
+- Creación de carpetas por tipo
+- OK --> Incluir logo, título y fecha del control
 """
 
 import os
 os.chdir(r"C:\Z_Proyectos\control_GPS")
 
 import pandas as pd
-import numpy as np
 import config
 import sqldf
 
 import plotly.graph_objects as go
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+
 from io import BytesIO
 from docx import Document
 from docx.shared import Inches
-from haversine import haversine, haversine_vector, Unit
-
-date = datetime.now() - relativedelta(days=1)
-date_str = date.strftime('%Y.%m.%d')
+from haversine import haversine, haversine_vector
 
 def read_data(report_path: str = config.report_path):
     df = pd.read_excel(report_path, header=3)
-    return df
     
-def read_param(param_path: str = config.param_path, locations_path: str = config.locations_path):
-    df_param = pd.read_excel(param_path)
-    df_locations = pd.read_excel(locations_path)
+    return df
 
-    return df_param, df_locations
+def create_vehicle_type_folders(vehicle_types = config.vehicle_types):
+    vehicle_types.append('Otros')
+    for vtype in vehicle_types:
+        vt_path = os.path.join(config.control_path, vtype)
+        if not os.path.isdir(vt_path):
+            os.mkdir(vt_path)
 
 def clean_data(df):
     filter_1 = df['Vehicle plate number'].notna()
@@ -61,26 +60,24 @@ def clean_data(df):
     
     return df
 
-def aggregate_metrics():
-    global df_drive_agg, df_park_agg
+def aggregate_metrics(df):
+    global df_drive_agg, df_park_agg, df_unique
     
     df_drive_agg = sqldf.run(config.driving_agg)
     df_park_agg = sqldf.run(config.parking_agg)
     df_agg = sqldf.run(config.join_agg)
     df_agg.drop(['index'], axis=1, inplace=True)
-    df_agg.to_excel(rf".\trip_metrics\{date_str}_trip_metrics.xlsx")
     
     df_unique = df[['Vehicle plate number', 'Closest']].drop_duplicates(['Vehicle plate number', 'Closest'])
+    df_sql = sqldf.run(config.query_places)
     
-    query_places = """
-    SELECT "Vehicle plate number" Placa, GROUP_CONCAT(Closest, ", ") AS Locations
-    FROM df_unique
-    GROUP BY Placa
-    """
+    df_agg = df_agg.merge(df_sql, on=['Placa'], how='left')
     
-    df_sql = sqldf.run(query_places)
+    df_agg.to_excel(rf".\trip_metrics\{config.date_str}_trip_metrics.xlsx", index=False)
+    
+    return df_agg
 
-def common_places(df, df_locations):
+def common_places(df, df_locations = config.df_locations):
     df['Ubicacion'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
     df_locations['Ubicacion'] = list(zip(df_locations['Latitud'], df_locations['Longitud']))
     array_1 = df_locations['Ubicacion'].tolist()
@@ -116,11 +113,9 @@ def plot_all_trips(df_plate):
     lats.append(df_plate['Latitud_Fin'].tolist()[-1])
     fig = go.Figure(go.Scattermapbox(mode = "markers+lines", marker = {'size': 9},
                                     lon = longs, lat = lats))
-    row = {'Latitud_Inicio': df_plate['Latitud_Inicio'].max(),
-           'Latitud_Fin': df_plate['Latitud_Inicio'].min(),
-           'Longitud_Inicio': df_plate['Longitud_Inicio'].max(),
-           'Longitud_Fin': df_plate['Longitud_Inicio'].min()}
-    zoom = set_plot_zoom(row)
+    min_min = (df_plate['Latitud_Inicio'].min(), df_plate['Longitud_Inicio'].min())
+    max_max = (df_plate['Latitud_Inicio'].max(), df_plate['Longitud_Inicio'].max())
+    zoom = set_plot_zoom(min_min, max_max)
     
     lat_center = (df_plate['Latitud_Inicio'].max() + df_plate['Latitud_Inicio'].min())/2
     lon_center = (df_plate['Longitud_Inicio'].max() + df_plate['Longitud_Inicio'].min())/2
@@ -149,7 +144,9 @@ def plot_single_trips(df_plate):
                                          lat = [row['Latitud_Inicio'], row['Latitud_Fin']]))
         lat_center = (row['Latitud_Inicio'] + row['Latitud_Fin'])/2
         lon_center = (row['Longitud_Inicio'] + row['Longitud_Fin'])/2
-        zoom = set_plot_zoom(row)
+        min_min = (min([row['Latitud_Inicio'], row['Latitud_Fin']]), min([row['Longitud_Inicio'], row['Longitud_Fin']]))
+        max_max = (max([row['Latitud_Inicio'], row['Latitud_Fin']]), max([row['Longitud_Inicio'], row['Longitud_Fin']]))
+        zoom = set_plot_zoom(min_min, max_max)
         fig.update_layout(margin = {'b': 0, 'l': 0, 'r': 0, 't':0},
                           mapbox = {'center': {'lat': lat_center,'lon': lon_center},
                                     'style': "open-street-map", 'zoom': zoom})
@@ -157,32 +154,36 @@ def plot_single_trips(df_plate):
         
         document.add_picture(fig_png, width=Inches(6.0))
 
-def set_plot_zoom(row):
-    cat_1 = np.square(row['Latitud_Inicio'] - row['Latitud_Fin'])
-    cat_2 = np.square(row['Longitud_Inicio'] - row['Longitud_Fin'])
-    hipotenusa = np.sqrt(cat_1 + cat_2)
-    
+def set_plot_zoom(min_min, max_max):
+    dist = haversine(min_min, max_max)
     zoom = 10
     for i in config.zoom_list:
-        if hipotenusa < i[0]:
+        if dist < i[0]:
             zoom = i[1]
             break
-    
+    #document.add_paragraph(f'TEMPORAL: Distancia: {dist} ZOOM: {zoom}')
     return zoom
 
-def create_trips_docx(df):
+def create_trips_docx(df, df_vehicles = config.df_vehicles):
     global document
+    
+    df = df.merge(df_vehicles, left_on='Vehicle plate number', right_on='Placa', how='left')
+    df['Tipo'].fillna('Otros', inplace=True)
     
     for plate in df['Vehicle plate number'].unique():
         document = Document()
+        document.add_picture(r"C:\Z_Proyectos\control_GPS\parametros_control\img\img_control.png", width=Inches(1.0))
         p = document.add_paragraph()
-        p.add_run(f'GPS {plate} del {date_str}').bold = True
+        p.add_run('INFORME VERIFICACIÓN DE GPS VERSIÓN 01').bold = True
+        document.add_paragraph().add_run(f'PLACA: {plate}')
+        document.add_paragraph().add_run(f'FECHA: {config.date_str}')
         
-        plate_path = os.path.join(config.control_path, f'{plate}')
+        vtype = df_vehicles[df_vehicles['Placa']==plate]['Tipo'].values[0]
+        plate_path = os.path.join(config.control_path, vtype, f'{plate}')
         if not os.path.isdir(plate_path):
             os.mkdir(plate_path)
         
-        day_path = os.path.join(plate_path, f'{date_str}')
+        day_path = os.path.join(plate_path, f'{config.date_str}')
         if not os.path.isdir(day_path):
             os.mkdir(day_path)
         
@@ -190,27 +191,19 @@ def create_trips_docx(df):
         
         if df_plate.shape[0] > 0:
             plot_all_trips(df_plate)
-            plot_single_trips(df_plate)    
-            document.save(os.path.join(day_path, f'{date_str}_{plate}.docx'))
+            plot_single_trips(df_plate)  
+            document.save(os.path.join(day_path, f'{config.date_str}_{plate}.docx'))
         
         print('Procesada: ', plate)
 
 def main_gps():
     df = read_data()
-    df_param, df_locations = read_param()
+    create_vehicle_type_folders(config.vehicle_types)
     df = clean_data(df)
-    df = common_places(df, df_locations)
-    aggregate_metrics()
+    df = common_places(df)
+    df_agg = aggregate_metrics(df)
     plot_heatmap_trips(df)
     create_trips_docx(df)
     
 if __name__ == '__main__':
-    #main_gps()
-    df = read_data()
-    df_param, df_locations = read_param()
-    df = clean_data(df)
-    df = common_places(df, df_locations)
-    aggregate_metrics()
-    plot_heatmap_trips(df)
-    df = df[df['Vehicle plate number']=='WMQ691'] ### BORRAR
-    create_trips_docx(df)
+    main_gps()
