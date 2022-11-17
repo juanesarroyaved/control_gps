@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-- OK --> Detallar en el gráfico cuál es el punto de inicio y punto de fin de un viaje.*
+- OK --> Detallar en el gráfico cuál es el punto de inicio y punto de fin de un viaje
 - OK --> Configurar el zoom automático.
 - Calcular también lugares cercanos para final del trayecto
 - Poner etiquetas de lugares frecuentes: ej: Marriott, Oficina, York, aeropuertos, etc.
@@ -12,16 +12,10 @@
 - OK --> Creación de carpetas por tipo
 - OK --> Incluir logo, título y fecha del control
 - OK --> Crear archivo de logs
-- Enviar correo
-- Probar ambiente virtual con requirements.txt
-- Probar archivo bash para ejecutarlo
-- Agregar imágenes más pequeñas en zooms lejanos
-- Documentación:
-    Probabilidades de error
-    Arquitectura
-    Secuencia de ejecución
-    Cambios a futuro o posibles mejoras
-    Supuestos o impedimentos importantes
+- OK --> Probar ambiente virtual con requirements.txt
+- OK --> Probar archivo bash para ejecutarlo
+- OK --> Agregar imágenes más pequeñas en zooms lejanos
+- OK --> Documentación
 """
 
 import os
@@ -190,12 +184,17 @@ def plot_single_trips(df_plate):
 def plot_start_end_location(lat: list, lon: list):
     
     p = document.add_paragraph()
-    for ll in tuple(zip(lat, lon)):
-        fig = go.Figure(go.Scattermapbox(lon = [ll[0]], lat = [ll[1]], 
-                                         marker = {'size': 12, 'opacity': 1, 'color': 'black'}))
+    for i, ll in enumerate(tuple(zip(lat, lon))):
+        color = 'blue'
+        if i == 1:
+            color = 'red'
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scattermapbox(mode='markers' , lat = [ll[0]], lon = [ll[1]], 
+                                         marker = {'size': 18, 'opacity': 1, 'color': color}))
         fig.update_layout(margin = {'b': 0, 'l': 0, 'r': 0, 't':0},
                           mapbox = {'center': {'lat': ll[0],'lon': ll[1]},
-                                    'style': "open-street-map", 'zoom': 15})
+                                    'style': "open-street-map", 'zoom': 16})
         fig_png = BytesIO(fig.to_image(format="png"))
         p.add_run().add_picture(fig_png, width=Inches(3.0))
     
