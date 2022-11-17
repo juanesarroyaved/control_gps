@@ -15,7 +15,7 @@ control_path = df_params.loc['Ruta resultados','Valor']
 
 df_locations = pd.read_excel(param_path, sheet_name='UBICACIONES')
 df_vehicles = pd.read_excel(param_path, sheet_name='VEHICULOS')
-vehicle_types = df_vehicles['Tipo'].dropna().unique()
+vehicle_types = list(df_vehicles['Tipo'].dropna().unique())
 
 driving_agg = """SELECT "Vehicle plate number" AS Placa, COUNT("Vehicle plate number") AS Total_Viajes,
                 SUM("Mileage (KM)") AS Total_KM, SUM("Duration_mins")/60 AS Total_Horas_Manejo,
@@ -43,4 +43,4 @@ query_places = """SELECT "Vehicle plate number" Placa, GROUP_CONCAT(Closest, ", 
                 GROUP BY Placa
                 """
 
-zoom_list = [(0.5, 15), (2.2, 14), (6, 13), (8, 12), (20, 11), (50, 10), (150, 9), (500, 8)]
+zoom_list = [(2.2, 14), (4.5, 13), (8, 12), (20, 11), (50, 10), (150, 9), (500, 8)]

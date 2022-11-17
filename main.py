@@ -3,18 +3,31 @@
 """
 - OK --> Detallar en el gráfico cuál es el punto de inicio y punto de fin de un viaje.*
 - OK --> Configurar el zoom automático.
+- Calcular también lugares cercanos para final del trayecto
 - Poner etiquetas de lugares frecuentes: ej: Marriott, Oficina, York, aeropuertos, etc.
 - Correo con notificación de ejecución
 - OK --> Informe de sitios turísticos.
 - OK --> Averiguar cuando se cuenta como Parqueo y cuando no.
 - OK --> Alison: placas con el tipo de vehículo
-- Creación de carpetas por tipo
+- OK --> Creación de carpetas por tipo
 - OK --> Incluir logo, título y fecha del control
+- OK --> Crear archivo de logs
+- Enviar correo
+- Probar ambiente virtual con requirements.txt
+- Probar archivo bash para ejecutarlo
+- Agregar imágenes más pequeñas en zooms lejanos
+- Documentación:
+    Probabilidades de error
+    Arquitectura
+    Secuencia de ejecución
+    Cambios a futuro o posibles mejoras
+    Supuestos o impedimentos importantes
 """
 
 import os
 os.chdir(r"C:\Z_Proyectos\control_GPS")
 
+import logging
 import pandas as pd
 import config
 import sqldf
@@ -27,6 +40,8 @@ from docx.shared import Inches
 from haversine import haversine, haversine_vector
 
 def read_data(report_path: str = config.report_path):
+    global df
+    
     df = pd.read_excel(report_path, header=3)
     
     return df
@@ -37,6 +52,15 @@ def create_vehicle_type_folders(vehicle_types = config.vehicle_types):
         vt_path = os.path.join(config.control_path, vtype)
         if not os.path.isdir(vt_path):
             os.mkdir(vt_path)
+
+def create_logger(control_path = config.control_path):
+    log_path = os.path.join(control_path, '0_Logs')
+    if not os.path.isdir(log_path):
+        os.mkdir(log_path)
+        
+    logging.basicConfig(filename=f'{log_path}\{config.date_str}.log', encoding='utf-8',
+                        format='%(asctime)s: %(message)s', datefmt='%Y.%m.%d %H:%M %p',
+                        level=logging.DEBUG)
 
 def clean_data(df):
     filter_1 = df['Vehicle plate number'].notna()
@@ -58,6 +82,8 @@ def clean_data(df):
     df = df.reset_index(drop=True)
     df.drop(['#', 'Duration', 'Start location', 'End location'], axis=1, inplace=True)
     
+    logging.info('Datos limpiados con éxito.')
+    
     return df
 
 def aggregate_metrics(df):
@@ -74,6 +100,7 @@ def aggregate_metrics(df):
     df_agg = df_agg.merge(df_sql, on=['Placa'], how='left')
     
     df_agg.to_excel(rf".\trip_metrics\{config.date_str}_trip_metrics.xlsx", index=False)
+    logging.info('Métricas por placa calculadas con éxito.')
     
     return df_agg
 
@@ -93,6 +120,8 @@ def common_places(df, df_locations = config.df_locations):
     df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else None, axis=1)
     df.drop(['Ubicacion', 'Location', 'Perimetro KM'], axis=1, inplace=True)
     
+    logging.info('Lugares cercanos calculados con éxito.')
+    
     return df
     
 def plot_heatmap_trips(df):
@@ -105,6 +134,7 @@ def plot_heatmap_trips(df):
                                 'style': "open-street-map", 'zoom': 10})
     
     fig.write_html(r".\trip_metrics\trips_mapa_calor.html")
+    logging.info('Mapa de calor creado con éxito.')
 
 def plot_all_trips(df_plate):
     longs = df_plate['Longitud_Inicio'].tolist()
@@ -151,8 +181,24 @@ def plot_single_trips(df_plate):
                           mapbox = {'center': {'lat': lat_center,'lon': lon_center},
                                     'style': "open-street-map", 'zoom': zoom})
         fig_png = BytesIO(fig.to_image(format="png"))
-        
         document.add_picture(fig_png, width=Inches(6.0))
+        
+        if zoom <= 11:
+            plot_start_end_location([row['Latitud_Inicio'], row['Latitud_Fin']],
+                                    [row['Longitud_Inicio'], row['Longitud_Fin']])
+
+def plot_start_end_location(lat: list, lon: list):
+    
+    p = document.add_paragraph()
+    for ll in tuple(zip(lat, lon)):
+        fig = go.Figure(go.Scattermapbox(lon = [ll[0]], lat = [ll[1]], 
+                                         marker = {'size': 12, 'opacity': 1, 'color': 'black'}))
+        fig.update_layout(margin = {'b': 0, 'l': 0, 'r': 0, 't':0},
+                          mapbox = {'center': {'lat': ll[0],'lon': ll[1]},
+                                    'style': "open-street-map", 'zoom': 15})
+        fig_png = BytesIO(fig.to_image(format="png"))
+        p.add_run().add_picture(fig_png, width=Inches(3.0))
+    
 
 def set_plot_zoom(min_min, max_max):
     dist = haversine(min_min, max_max)
@@ -179,24 +225,26 @@ def create_trips_docx(df, df_vehicles = config.df_vehicles):
         document.add_paragraph().add_run(f'FECHA: {config.date_str}')
         
         vtype = df_vehicles[df_vehicles['Placa']==plate]['Tipo'].values[0]
+        if vtype not in config.vehicle_types:
+            vtype = 'Otros'
+            
         plate_path = os.path.join(config.control_path, vtype, f'{plate}')
         if not os.path.isdir(plate_path):
             os.mkdir(plate_path)
-        
-        day_path = os.path.join(plate_path, f'{config.date_str}')
-        if not os.path.isdir(day_path):
-            os.mkdir(day_path)
         
         df_plate = df[(df['Vehicle plate number']==plate) & (df['Trip State']=='Driving')]
         
         if df_plate.shape[0] > 0:
             plot_all_trips(df_plate)
             plot_single_trips(df_plate)  
-            document.save(os.path.join(day_path, f'{config.date_str}_{plate}.docx'))
+            document.save(os.path.join(plate_path, f'{config.date_str}_{plate}.docx'))
         
         print('Procesada: ', plate)
+        logging.info(f'PROCESADA: {plate}')
 
 def main_gps():
+    create_logger()
+    logging.info('INICIO EJECUCIÓN')
     df = read_data()
     create_vehicle_type_folders(config.vehicle_types)
     df = clean_data(df)
@@ -204,6 +252,7 @@ def main_gps():
     df_agg = aggregate_metrics(df)
     plot_heatmap_trips(df)
     create_trips_docx(df)
+    logging.info('FIN EJECUCIÓN')
     
 if __name__ == '__main__':
     main_gps()
