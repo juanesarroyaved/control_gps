@@ -19,11 +19,9 @@
 """
 
 import os
-os.chdir(r"C:\Z_Proyectos\control_GPS")
-
+import config
 import logging
 import pandas as pd
-import config
 import sqldf
 
 import plotly.graph_objects as go
@@ -217,7 +215,7 @@ def create_trips_docx(df, df_vehicles = config.df_vehicles):
     
     for plate in df['Vehicle plate number'].unique():
         document = Document()
-        document.add_picture(r"C:\Z_Proyectos\control_GPS\parametros_control\img\img_control.png", width=Inches(1.0))
+        document.add_picture(r".\parametros_control\img\img_control.png", width=Inches(1.0))
         p = document.add_paragraph()
         p.add_run('INFORME VERIFICACIÓN DE GPS VERSIÓN 01').bold = True
         document.add_paragraph().add_run(f'PLACA: {plate}')
@@ -238,8 +236,8 @@ def create_trips_docx(df, df_vehicles = config.df_vehicles):
             plot_single_trips(df_plate)  
             document.save(os.path.join(plate_path, f'{config.date_str}_{plate}.docx'))
         
-        print('Procesada: ', plate)
-        logging.info(f'PROCESADA: {plate}')
+        print(f'PROCESADA: {plate} - {vtype}')
+        logging.info(f'PROCESADA: {plate} - {vtype}')
 
 def main_gps():
     create_logger()

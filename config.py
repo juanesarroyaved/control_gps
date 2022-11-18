@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 date = datetime.now() - relativedelta(days=1)
 date_str = date.strftime('%Y.%m.%d')
 
-param_path = r"C:\Z_Proyectos\control_GPS\parametros_control\Parametros.xlsx"
+param_path = r".\parametros_control\Parametros.xlsx"
 
 df_params = pd.read_excel(param_path, sheet_name='PARAMETROS', index_col=0)
 report_path = df_params.loc['Ruta reporte','Valor']
@@ -16,6 +16,8 @@ control_path = df_params.loc['Ruta resultados','Valor']
 df_locations = pd.read_excel(param_path, sheet_name='UBICACIONES')
 df_vehicles = pd.read_excel(param_path, sheet_name='VEHICULOS')
 vehicle_types = list(df_vehicles['Tipo'].dropna().unique())
+
+zoom_list = [(2.2, 14), (4.5, 13), (8, 12), (20, 11), (50, 10), (150, 9), (500, 8)]
 
 driving_agg = """SELECT "Vehicle plate number" AS Placa, COUNT("Vehicle plate number") AS Total_Viajes,
                 SUM("Mileage (KM)") AS Total_KM, SUM("Duration_mins")/60 AS Total_Horas_Manejo,
@@ -42,5 +44,3 @@ query_places = """SELECT "Vehicle plate number" Placa, GROUP_CONCAT(Closest, ", 
                 FROM df_unique
                 GROUP BY Placa
                 """
-
-zoom_list = [(2.2, 14), (4.5, 13), (8, 12), (20, 11), (50, 10), (150, 9), (500, 8)]

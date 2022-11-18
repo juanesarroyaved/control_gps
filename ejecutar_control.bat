@@ -2,9 +2,7 @@
 
 @echo INICIO EJECUCION
 
-CD C:\Z_Proyectos\control_GPS
-
-python main.py
+python %CD%\main.py
 
 @echo FIN EJECUCION
 
