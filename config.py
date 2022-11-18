@@ -15,6 +15,8 @@ control_path = df_params.loc['Ruta resultados','Valor']
 
 df_locations = pd.read_excel(param_path, sheet_name='UBICACIONES')
 df_vehicles = pd.read_excel(param_path, sheet_name='VEHICULOS')
+df_schedules = pd.read_excel(param_path, sheet_name='CRONOGRAMA')
+
 vehicle_types = list(df_vehicles['Tipo'].dropna().unique())
 
 zoom_list = [(2.2, 14), (4.5, 13), (8, 12), (20, 11), (50, 10), (150, 9), (500, 8)]

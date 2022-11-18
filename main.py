@@ -16,6 +16,7 @@
 - OK --> Probar archivo bash para ejecutarlo
 - OK --> Agregar imágenes más pequeñas en zooms lejanos
 - OK --> Documentación
+- Crear un validador de columnas para los DataFrames y generar alertas si estos cambian
 """
 
 import os
@@ -78,6 +79,50 @@ def clean_data(df):
     
     return df
 
+def common_places(df, df_locations = config.df_locations):
+    df['Ubicacion'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
+    df_locations['Acopio'] = df_locations['Acopio'].fillna('NO')
+    df_locations['Ubicacion'] = list(zip(df_locations['Latitud'], df_locations['Longitud']))
+    array_1 = df_locations['Ubicacion'].tolist()
+    array_2 = df['Ubicacion'].tolist()
+    
+    dists = haversine_vector(array_1, array_2, unit='km', comb=True)
+    df_dists = pd.DataFrame(dists, columns=df_locations['Location'])
+    
+    df['Closest'] = df_dists.idxmin(axis=1)
+    df['Dist'] = df_dists.min(axis=1)
+    df = df.merge(df_locations[['Location', 'Perimetro KM', 'Acopio']],
+                  left_on=['Closest'], right_on=['Location'], how='left')
+    df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else None, axis=1)
+    df.drop(['Ubicacion', 'Location', 'Perimetro KM'], axis=1, inplace=True)
+    
+    logging.info('Lugares cercanos calculados con éxito.')
+
+    return df
+
+def identificar_acopios(df, df_vehicles = config.df_vehicles):
+    
+    df = df.merge(df_vehicles, left_on='Vehicle plate number', right_on='Placa', how='left')
+    df['Tipo'].fillna('Otros', inplace=True)
+    
+    bool_i = df['Closest'].notna()
+    bool_ii = df['Acopio']=='SI'
+    bool_iii = df['Trip State']=='Parking'
+    df_acopios = df[bool_i & bool_ii & bool_iii]
+    df_acopios = df_acopios.groupby(['Placa', 'Tipo', 'Closest'])['Duration_mins'].sum().reset_index()
+    
+    logging.info('Acopios identificados correctamente.')
+    
+    return df_acopios
+    
+def identificar_descansos(df, df_schedules = config.df_schedules):
+    #df_schedules = df_schedules.melt(id_vars=['CONDUCTOR'], var_name='FECHA', value_name='HORARIO')
+    #df = df.merge(df_schedules, left_on='Conductor', right_on='CONDUCTOR', how='left')
+    
+    logging.info('Descansos identificados correctamente.')
+    
+    return df
+
 def aggregate_metrics(df):
     global df_drive_agg, df_park_agg, df_unique
     
@@ -95,26 +140,6 @@ def aggregate_metrics(df):
     logging.info('Métricas por placa calculadas con éxito.')
     
     return df_agg
-
-def common_places(df, df_locations = config.df_locations):
-    df['Ubicacion'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
-    df_locations['Ubicacion'] = list(zip(df_locations['Latitud'], df_locations['Longitud']))
-    array_1 = df_locations['Ubicacion'].tolist()
-    array_2 = df['Ubicacion'].tolist()
-    
-    dists = haversine_vector(array_1, array_2, unit='km', comb=True)
-    df_dists = pd.DataFrame(dists, columns=df_locations['Location'])
-    
-    df['Closest'] = df_dists.idxmin(axis=1)
-    df['Dist'] = df_dists.min(axis=1)
-    df = df.merge(df_locations[['Location', 'Perimetro KM']],
-                  left_on=['Closest'], right_on=['Location'], how='left')
-    df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else None, axis=1)
-    df.drop(['Ubicacion', 'Location', 'Perimetro KM'], axis=1, inplace=True)
-    
-    logging.info('Lugares cercanos calculados con éxito.')
-    
-    return df
     
 def plot_heatmap_trips(df):
     fig = go.Figure(go.Densitymapbox(lat=df['Latitud_Inicio'], lon=df['Longitud_Inicio'], radius=5))
@@ -207,11 +232,8 @@ def set_plot_zoom(min_min, max_max):
     #document.add_paragraph(f'TEMPORAL: Distancia: {dist} ZOOM: {zoom}')
     return zoom
 
-def create_trips_docx(df, df_vehicles = config.df_vehicles):
+def create_trips_docx(df):
     global document
-    
-    df = df.merge(df_vehicles, left_on='Vehicle plate number', right_on='Placa', how='left')
-    df['Tipo'].fillna('Otros', inplace=True)
     
     for plate in df['Vehicle plate number'].unique():
         document = Document()
@@ -221,7 +243,7 @@ def create_trips_docx(df, df_vehicles = config.df_vehicles):
         document.add_paragraph().add_run(f'PLACA: {plate}')
         document.add_paragraph().add_run(f'FECHA: {config.date_str}')
         
-        vtype = df_vehicles[df_vehicles['Placa']==plate]['Tipo'].values[0]
+        vtype = df[df['Vehicle plate number']==plate]['Tipo'].values[0]
         if vtype not in config.vehicle_types:
             vtype = 'Otros'
             
@@ -246,6 +268,7 @@ def main_gps():
     create_vehicle_type_folders(config.vehicle_types)
     df = clean_data(df)
     df = common_places(df)
+    df_acopios = identificar_acopios(df)
     df_agg = aggregate_metrics(df)
     plot_heatmap_trips(df)
     create_trips_docx(df)
