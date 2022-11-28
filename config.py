@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
-
+import re
 import pandas as pd
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
-date = datetime.now() - relativedelta(days=1)
-date_str = date.strftime('%Y.%m.%d')
+today = datetime.now().strftime('%Y.%m.%d')
 
 param_path = r".\parametros_control\Parametros.xlsx"
 
 df_params = pd.read_excel(param_path, sheet_name='PARAMETROS', index_col=0)
 report_path = df_params.loc['Ruta reporte','Valor']
 control_path = df_params.loc['Ruta resultados','Valor']
+report_dates = re.findall(r'[0-9]{8}', report_path)
+start_date = report_dates[0][:4] + '.' + report_dates[0][4:6] + '.' + report_dates[0][6:]
+end_date = start_date
+if len(report_dates) > 1:
+    end_date = report_dates[1][:4] + '.' + report_dates[1][4:6] + '.' + report_dates[1][6:]
 
 df_locations = pd.read_excel(param_path, sheet_name='UBICACIONES')
 df_vehicles = pd.read_excel(param_path, sheet_name='VEHICULOS')
@@ -46,3 +49,9 @@ query_places = """SELECT "Vehicle plate number" Placa, GROUP_CONCAT(Closest, ", 
                 FROM df_unique
                 GROUP BY Placa
                 """
+
+spa_eng_cols = {'Número de placa del vehículo': 'Vehicle plate number',
+                'Estado de viaje': 'Trip State', 'Tiempo de Inicio': 'Start time',
+                'Tiempo Final': 'End time', 'Kilometraje (KM)': 'Mileage (KM)',
+                'Duración': 'Duration', 'Lugar de inicio': 'Start location',
+                'Fin Localización': 'End location'}

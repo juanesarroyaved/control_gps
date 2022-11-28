@@ -5,6 +5,8 @@
 - OK --> Configurar el zoom automático.
 - Calcular también lugares cercanos para final del trayecto
 - Poner etiquetas de lugares frecuentes: ej: Marriott, Oficina, York, aeropuertos, etc.
+- Poner el lugar cercano en el word
+- Corregir la fecha en los documentos de word.
 - Correo con notificación de ejecución
 - OK --> Informe de sitios turísticos.
 - OK --> Averiguar cuando se cuenta como Parqueo y cuando no.
@@ -16,7 +18,10 @@
 - OK --> Probar archivo bash para ejecutarlo
 - OK --> Agregar imágenes más pequeñas en zooms lejanos
 - OK --> Documentación
-- Crear un validador de columnas para los DataFrames y generar alertas si estos cambian
+- OK --> Configurar cuando el reporte se descargue en español.
+- Detallar específicamente las rutas en la documentación.
+- OK --> Tomar la fecha desde el nombre del reporte, no la del día anterior. Actualizarla en el word.
+- Documentación: pedir que no cambien el nombre del reporte.
 """
 
 import os
@@ -36,6 +41,7 @@ def read_data(report_path: str = config.report_path):
     global df
     
     df = pd.read_excel(report_path, header=3)
+    df.rename(mapper=config.spa_eng_cols, inplace=True, axis=1)
     
     return df
 
@@ -51,15 +57,16 @@ def create_logger(control_path = config.control_path):
     if not os.path.isdir(log_path):
         os.mkdir(log_path)
         
-    logging.basicConfig(filename=f'{log_path}\{config.date_str}.log', encoding='utf-8',
+    logging.basicConfig(filename=f'{log_path}\{config.start_date}-{config.end_date}.log', encoding='utf-8',
                         format='%(asctime)s: %(message)s', datefmt='%Y.%m.%d %H:%M %p',
                         level=logging.DEBUG)
 
 def clean_data(df):
     filter_1 = df['Vehicle plate number'].notna()
-    filter_2 = df['Vehicle plate number'] != 'Vehicle plate number'
+    filter_2 = df['#'] != '#'
     df = df[filter_1 & filter_2]
     
+    df['Trip State'] = df['Trip State'].replace({'Conducir': 'Driving', 'Estacionamiento': 'Parking'})
     df['Start time'] = pd.to_datetime(df['Start time'])
     df['End time'] = pd.to_datetime(df['End time'])
     df['Duration_mins'] = (df['End time'] - df['Start time'])
@@ -109,11 +116,11 @@ def identificar_acopios(df, df_vehicles = config.df_vehicles):
     bool_ii = df['Acopio']=='SI'
     bool_iii = df['Trip State']=='Parking'
     df_acopios = df[bool_i & bool_ii & bool_iii]
-    df_acopios = df_acopios.groupby(['Placa', 'Tipo', 'Closest'])['Duration_mins'].sum().reset_index()
+    df_acopios = df_acopios.groupby(['Vehicle plate number', 'Tipo', 'Closest'])['Duration_mins'].sum().reset_index()
     
     logging.info('Acopios identificados correctamente.')
     
-    return df_acopios
+    return df, df_acopios
     
 def identificar_descansos(df, df_schedules = config.df_schedules):
     #df_schedules = df_schedules.melt(id_vars=['CONDUCTOR'], var_name='FECHA', value_name='HORARIO')
@@ -136,7 +143,7 @@ def aggregate_metrics(df):
     
     df_agg = df_agg.merge(df_sql, on=['Placa'], how='left')
     
-    df_agg.to_excel(rf".\trip_metrics\{config.date_str}_trip_metrics.xlsx", index=False)
+    df_agg.to_excel(rf".\trip_metrics\{config.start_date}-{config.end_date}_trip_metrics.xlsx", index=False)
     logging.info('Métricas por placa calculadas con éxito.')
     
     return df_agg
@@ -180,8 +187,8 @@ def plot_single_trips(df_plate):
         document.add_page_break()
         p = document.add_paragraph()
         p.add_run(f'Viaje {trip_num}').bold = True
-        document.add_paragraph(f'Desde {row["Start time"]} hasta {row["End time"]}')
-        document.add_paragraph('Duración del viaje: %.1f minutos.' %row["Duration_mins"])
+        document.add_paragraph(f'{row["Start time"]} - {row["End time"]}')
+        document.add_paragraph('Duración: %.1f minutos.' %row["Duration_mins"])
         document.add_paragraph('Total KM: %.1f' %row["Mileage (KM)"])
         fig = go.Figure(go.Scattermapbox(mode = "markers+lines",
                                          marker = {'size': [12,12], 'opacity': 1,
@@ -239,9 +246,9 @@ def create_trips_docx(df):
         document = Document()
         document.add_picture(r".\parametros_control\img\img_control.png", width=Inches(1.0))
         p = document.add_paragraph()
-        p.add_run('INFORME VERIFICACIÓN DE GPS VERSIÓN 01').bold = True
+        p.add_run('INFORME VERIFICACIÓN DE GPS VERSIÓN 01 - {config.today}').bold = True
         document.add_paragraph().add_run(f'PLACA: {plate}')
-        document.add_paragraph().add_run(f'FECHA: {config.date_str}')
+        document.add_paragraph().add_run(f'FECHA: {config.start_date}')
         
         vtype = df[df['Vehicle plate number']==plate]['Tipo'].values[0]
         if vtype not in config.vehicle_types:
@@ -256,7 +263,7 @@ def create_trips_docx(df):
         if df_plate.shape[0] > 0:
             plot_all_trips(df_plate)
             plot_single_trips(df_plate)  
-            document.save(os.path.join(plate_path, f'{config.date_str}_{plate}.docx'))
+            document.save(os.path.join(plate_path, f'{config.start_date}-{config.end_date}_{plate}.docx'))
         
         print(f'PROCESADA: {plate} - {vtype}')
         logging.info(f'PROCESADA: {plate} - {vtype}')
@@ -268,7 +275,7 @@ def main_gps():
     create_vehicle_type_folders(config.vehicle_types)
     df = clean_data(df)
     df = common_places(df)
-    df_acopios = identificar_acopios(df)
+    df, df_acopios = identificar_acopios(df)
     df_agg = aggregate_metrics(df)
     plot_heatmap_trips(df)
     create_trips_docx(df)
