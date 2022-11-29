@@ -6,22 +6,11 @@
 - Calcular también lugares cercanos para final del trayecto
 - Poner etiquetas de lugares frecuentes: ej: Marriott, Oficina, York, aeropuertos, etc.
 - Poner el lugar cercano en el word
-- Corregir la fecha en los documentos de word.
 - Correo con notificación de ejecución
 - OK --> Informe de sitios turísticos.
-- OK --> Averiguar cuando se cuenta como Parqueo y cuando no.
-- OK --> Alison: placas con el tipo de vehículo
-- OK --> Creación de carpetas por tipo
-- OK --> Incluir logo, título y fecha del control
-- OK --> Crear archivo de logs
-- OK --> Probar ambiente virtual con requirements.txt
-- OK --> Probar archivo bash para ejecutarlo
 - OK --> Agregar imágenes más pequeñas en zooms lejanos
-- OK --> Documentación
 - OK --> Configurar cuando el reporte se descargue en español.
-- Detallar específicamente las rutas en la documentación.
 - OK --> Tomar la fecha desde el nombre del reporte, no la del día anterior. Actualizarla en el word.
-- Documentación: pedir que no cambien el nombre del reporte.
 """
 
 import os
@@ -87,21 +76,21 @@ def clean_data(df):
     return df
 
 def common_places(df, df_locations = config.df_locations):
-    df['Ubicacion'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
+    df['Ubicacion_Inicio'] = list(zip(df['Latitud_Inicio'], df['Longitud_Inicio']))
     df_locations['Acopio'] = df_locations['Acopio'].fillna('NO')
-    df_locations['Ubicacion'] = list(zip(df_locations['Latitud'], df_locations['Longitud']))
-    array_1 = df_locations['Ubicacion'].tolist()
-    array_2 = df['Ubicacion'].tolist()
+    df_locations['Ubicacion_Inicio'] = list(zip(df_locations['Latitud'], df_locations['Longitud']))
+    array_1 = df_locations['Ubicacion_Inicio'].tolist()
+    array_2 = df['Ubicacion_Inicio'].tolist()
     
     dists = haversine_vector(array_1, array_2, unit='km', comb=True)
     df_dists = pd.DataFrame(dists, columns=df_locations['Location'])
-    
-    df['Closest'] = df_dists.idxmin(axis=1)
+    df['Lugar_Inicio'] = df_dists.idxmin(axis=1)
     df['Dist'] = df_dists.min(axis=1)
     df = df.merge(df_locations[['Location', 'Perimetro KM', 'Acopio']],
-                  left_on=['Closest'], right_on=['Location'], how='left')
-    df['Closest'] = df.apply(lambda x: x['Closest'] if x['Perimetro KM'] > x['Dist'] else None, axis=1)
-    df.drop(['Ubicacion', 'Location', 'Perimetro KM'], axis=1, inplace=True)
+                  left_on=['Lugar_Inicio'], right_on=['Location'], how='left')
+    df['Lugar_Inicio'] = df.apply(lambda x: x['Lugar_Inicio'] if x['Perimetro KM'] > x['Dist'] else None, axis=1)
+    
+    df.drop(['Ubicacion_Inicio', 'Location', 'Perimetro KM'], axis=1, inplace=True)
     
     logging.info('Lugares cercanos calculados con éxito.')
 
@@ -112,19 +101,26 @@ def identificar_acopios(df, df_vehicles = config.df_vehicles):
     df = df.merge(df_vehicles, left_on='Vehicle plate number', right_on='Placa', how='left')
     df['Tipo'].fillna('Otros', inplace=True)
     
-    bool_i = df['Closest'].notna()
+    bool_i = df['Lugar_Inicio'].notna()
     bool_ii = df['Acopio']=='SI'
     bool_iii = df['Trip State']=='Parking'
     df_acopios = df[bool_i & bool_ii & bool_iii]
-    df_acopios = df_acopios.groupby(['Vehicle plate number', 'Tipo', 'Closest'])['Duration_mins'].sum().reset_index()
+    df_acopios = df_acopios.groupby(['Vehicle plate number', 'Tipo', 'Lugar_Inicio'])['Duration_mins'].sum().reset_index()
+    df_acopios.sort_values(by=['Duration_mins'], ascending=False, inplace=True)
     
     logging.info('Acopios identificados correctamente.')
     
     return df, df_acopios
     
 def identificar_descansos(df, df_schedules = config.df_schedules):
-    #df_schedules = df_schedules.melt(id_vars=['CONDUCTOR'], var_name='FECHA', value_name='HORARIO')
-    #df = df.merge(df_schedules, left_on='Conductor', right_on='CONDUCTOR', how='left')
+    df_schedules = df_schedules.melt(id_vars=['Conductor'], var_name='FECHA', value_name='HORARIO')
+    df_schedules = df_schedules[df_schedules['HORARIO']=='DESCANSA']
+    df_schedules['Y'] = df_schedules['FECHA'].dt.year
+    df_schedules['M'] = df_schedules['FECHA'].dt.month
+    df_schedules['D'] = df_schedules['FECHA'].dt.day
+    st = df['Start time']
+    df['Y'], df['M'], df['D'] = st.dt.year, st.dt.month, st.dt.day
+    df = df.merge(df_schedules, on=['Conductor', 'Y', 'M', 'D'], how='left')
     
     logging.info('Descansos identificados correctamente.')
     
@@ -138,12 +134,10 @@ def aggregate_metrics(df):
     df_agg = sqldf.run(config.join_agg)
     df_agg.drop(['index'], axis=1, inplace=True)
     
-    df_unique = df[['Vehicle plate number', 'Closest']].drop_duplicates(['Vehicle plate number', 'Closest'])
+    df_unique = df[['Vehicle plate number', 'Lugar_Inicio']].drop_duplicates(['Vehicle plate number', 'Lugar_Inicio'])
     df_sql = sqldf.run(config.query_places)
     
     df_agg = df_agg.merge(df_sql, on=['Placa'], how='left')
-    
-    df_agg.to_excel(rf".\trip_metrics\{config.start_date}-{config.end_date}_trip_metrics.xlsx", index=False)
     logging.info('Métricas por placa calculadas con éxito.')
     
     return df_agg
@@ -207,7 +201,7 @@ def plot_single_trips(df_plate):
         fig_png = BytesIO(fig.to_image(format="png"))
         document.add_picture(fig_png, width=Inches(6.0))
         
-        if zoom <= 11:
+        if zoom <= 12:
             plot_start_end_location([row['Latitud_Inicio'], row['Latitud_Fin']],
                                     [row['Longitud_Inicio'], row['Longitud_Fin']])
 
@@ -246,7 +240,7 @@ def create_trips_docx(df):
         document = Document()
         document.add_picture(r".\parametros_control\img\img_control.png", width=Inches(1.0))
         p = document.add_paragraph()
-        p.add_run('INFORME VERIFICACIÓN DE GPS VERSIÓN 01 - {config.today}').bold = True
+        p.add_run(f'INFORME VERIFICACIÓN DE GPS VERSIÓN 01 - {config.today}').bold = True
         document.add_paragraph().add_run(f'PLACA: {plate}')
         document.add_paragraph().add_run(f'FECHA: {config.start_date}')
         
@@ -268,6 +262,13 @@ def create_trips_docx(df):
         print(f'PROCESADA: {plate} - {vtype}')
         logging.info(f'PROCESADA: {plate} - {vtype}')
 
+def export_results(dfs: list, sheet_names: list):
+    writer = pd.ExcelWriter(rf".\trip_metrics\{config.start_date}-{config.end_date}_trip_metrics.xlsx", engine='openpyxl')
+    for df, name in zip(dfs, sheet_names):
+        df.to_excel(writer, sheet_name=name, index=False)
+        writer.save()
+    logging.info('Resultados exportados correctamente.')
+
 def main_gps():
     create_logger()
     logging.info('INICIO EJECUCIÓN')
@@ -276,9 +277,12 @@ def main_gps():
     df = clean_data(df)
     df = common_places(df)
     df, df_acopios = identificar_acopios(df)
+    df = identificar_descansos(df)
     df_agg = aggregate_metrics(df)
     plot_heatmap_trips(df)
     create_trips_docx(df)
+    export_results([df, df_agg, df_acopios],
+                   ['DATOS', 'MÉTRICAS', 'ACOPIOS'])
     logging.info('FIN EJECUCIÓN')
     
 if __name__ == '__main__':
